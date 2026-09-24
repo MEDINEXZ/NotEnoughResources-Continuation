@@ -1,4 +1,4 @@
-package com.myname.mymodid;
+package com.medinexz.notenoughresources;
 
 import java.io.File;
 

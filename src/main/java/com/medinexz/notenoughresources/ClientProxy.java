@@ -1,4 +1,4 @@
-package com.myname.mymodid;
+package com.medinexz.notenoughresources;
 
 public class ClientProxy extends CommonProxy {
 
