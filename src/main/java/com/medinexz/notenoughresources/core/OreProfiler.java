@@ -36,9 +36,9 @@ public class OreProfiler {
                 }
             }
 
-            double probality = (double) oreCount / blockCount;
+            double probability = (double) oreCount / blockCount;
 
-            profile.setProbability(y, probality);
+            profile.setProbability(y, probability);
         }
 
         return profile;

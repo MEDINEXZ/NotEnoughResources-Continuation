@@ -1,6 +1,7 @@
 package com.medinexz.notenoughresources;
 
-import com.medinexz.notenoughresources.core.OreProfilerTest;
+import com.medinexz.notenoughresources.core.OreGenerationManager;
+import com.medinexz.notenoughresources.core.OreRegistry;
 import cpw.mods.fml.common.FMLCommonHandler;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -39,7 +40,11 @@ public class NotEnoughResources {
     public void init(FMLInitializationEvent event) {
         proxy.init(event);
 
-        FMLCommonHandler.instance().bus().register(new OreProfilerTest());
+        OreRegistry.registerVanillaOres();
+
+        FMLCommonHandler.instance().bus().register(
+            OreGenerationManager.getInstance()
+        );
     }
 
     @Mod.EventHandler

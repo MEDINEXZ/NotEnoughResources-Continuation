@@ -3,6 +3,7 @@ package com.medinexz.notenoughresources.core;
 import net.minecraft.block.Block;
 
 public class OreData {
+    private String name;
     private Block block;
     private int metadata;
 
@@ -11,13 +12,18 @@ public class OreData {
 
     private OreGenerationProfile generationProfile;
 
-    public OreData(Block block, int metadata, int minY, int maxY) {
+    public OreData(String name,Block block, int metadata, int minY, int maxY) {
+        this.name = name;
         this.block = block;
         this.metadata = metadata;
         this.minY = minY;
         this.maxY = maxY;
 
         this.generationProfile = new OreGenerationProfile(minY, maxY);
+    }
+
+    public String getName() {
+        return name;
     }
 
     public Block getBlock() {
@@ -38,5 +44,9 @@ public class OreData {
 
     public OreGenerationProfile getGenerationProfile() {
         return generationProfile;
+    }
+
+    public void setGenerationProfile(OreGenerationProfile generationProfile) {
+        this.generationProfile = generationProfile;
     }
 }
