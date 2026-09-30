@@ -40,8 +40,6 @@ public class NotEnoughResources {
     public void init(FMLInitializationEvent event) {
         proxy.init(event);
 
-        OreRegistry.registerVanillaOres();
-
         FMLCommonHandler.instance().bus().register(
             OreGenerationManager.getInstance()
         );

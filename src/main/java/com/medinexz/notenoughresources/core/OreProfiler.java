@@ -13,30 +13,42 @@ public class OreProfiler {
         int minZ,
         int maxZ
     ) {
-        OreGenerationProfile profile = oreData.getGenerationProfile();
+
+        OreGenerationProfile profile =
+            new OreGenerationProfile(
+                oreData.getMinY(),
+                oreData.getMaxY()
+            );
 
         Block targetBlock = oreData.getBlock();
         int targetMetaData = oreData.getMetadata();
-        for (int y = oreData.getMinY(); y <= oreData.getMaxY(); y++) {
+
+        for (int y = oreData.getMinY();
+             y <= oreData.getMaxY();
+             y++) {
 
             int oreCount = 0;
             int blockCount = 0;
 
-            for (int x = minX;  x <= maxX; x++) {
+            for (int x = minX; x <= maxX; x++) {
                 for (int z = minZ; z <= maxZ; z++) {
 
                     Block block = world.getBlock(x, y, z);
-                    int metadata = world.getBlockMetadata(x, y, z);
+                    int metadata =
+                        world.getBlockMetadata(x, y, z);
 
                     blockCount++;
 
-                    if (block == targetBlock && metadata == targetMetaData) {
+                    if (block == targetBlock
+                        && metadata == targetMetaData) {
+
                         oreCount++;
                     }
                 }
             }
 
-            double probability = (double) oreCount / blockCount;
+            double probability =
+                (double) oreCount / blockCount;
 
             profile.setProbability(y, probability);
         }

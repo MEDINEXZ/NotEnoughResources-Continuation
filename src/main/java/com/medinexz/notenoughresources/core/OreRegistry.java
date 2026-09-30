@@ -1,5 +1,6 @@
 package com.medinexz.notenoughresources.core;
 
+import net.minecraft.block.Block;
 import net.minecraft.init.Blocks;
 
 import java.util.ArrayList;
@@ -9,7 +10,31 @@ public class OreRegistry {
     private static final List<OreData> ores = new ArrayList<>();
 
     public static void register(OreData oreData) {
+
+        for (OreData registeredOre : ores) {
+
+            if (registeredOre.getBlock() == oreData.getBlock()
+                && registeredOre.getMetadata() == oreData.getMetadata()) {
+
+                return;
+            }
+        }
+
         ores.add(oreData);
+    }
+
+    public static OreData getOre(Block block, int metadata) {
+
+        for (OreData oreData : ores) {
+
+            if (oreData.getBlock() == block
+                && oreData.getMetadata() == metadata) {
+
+                return oreData;
+            }
+        }
+
+        return null;
     }
 
     public static List<OreData> getOres() {
