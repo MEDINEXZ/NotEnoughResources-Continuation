@@ -39,6 +39,7 @@ public class OreProfilerTest {
         int playerZ = (int) player.posZ;
 
         OreData ironOre = new OreData(
+            "Iron Ore",
             Blocks.iron_ore,
             0,
             0,

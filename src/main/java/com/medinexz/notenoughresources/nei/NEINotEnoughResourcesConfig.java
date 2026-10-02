@@ -10,27 +10,18 @@ public class NEINotEnoughResourcesConfig
 
     @Override
     public void loadConfig() {
-
-        System.out.println(
-            "=== NER NEI CONFIG LOADED ==="
-        );
-
-        API.registerUsageHandler(
-            new OreGenerationNEIHandler()
-        );
+        OreGenerationNEIHandler handler = new OreGenerationNEIHandler();
+        API.registerUsageHandler(handler);
+        API.registerRecipeHandler(handler);
     }
-
 
     @Override
     public String getName() {
-
         return "NotEnoughResources Continuation";
     }
 
-
     @Override
     public String getVersion() {
-
         return "1.0";
     }
 }

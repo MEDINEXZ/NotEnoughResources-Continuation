@@ -7,31 +7,24 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.world.World;
 
 import java.util.HashMap;
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 
 public class OreGenerationManager {
 
-    private OreProfiler profiler;
+    private OreProfiler  profiler;
     private OreDiscovery discovery;
 
     private boolean profiled = false;
 
     private Map<OreKey, OreData> ores;
 
-    private static final OreGenerationManager INSTANCE =
-        new OreGenerationManager();
+    private static final OreGenerationManager INSTANCE = new OreGenerationManager();
 
     private OreGenerationManager() {
-
-        ores = new HashMap<OreKey, OreData>();
-
-        profiler = new OreProfiler();
-
-        discovery =
-            new OreDiscovery(
-                new VanillaOreDetector()
-            );
+        ores      = new HashMap<OreKey, OreData>();
+        profiler  = new OreProfiler();
+        discovery = new OreDiscovery(new VanillaOreDetector());
     }
 
     public static OreGenerationManager getInstance() {
@@ -39,175 +32,86 @@ public class OreGenerationManager {
     }
 
     public void registerOre(OreData data) {
-
-        OreKey key =
-            new OreKey(
-                data.getBlock(),
-                data.getMetadata()
-            );
-
-        ores.put(key, data);
+        ores.put(new OreKey(data.getBlock(), data.getMetadata()), data);
     }
 
-    public OreData getOreData(
-        Block block,
-        int metadata
-    ) {
-
-        OreKey key =
-            new OreKey(
-                block,
-                metadata
-            );
-
-        return ores.get(key);
-    }
-
-    public OreGenerationProfile profileOre(
-        World world,
-        OreData oreData,
-        int minX,
-        int maxX,
-        int minZ,
-        int maxZ
-    ) {
-
-        OreGenerationProfile profile =
-            profiler.profile(
-                world,
-                oreData,
-                minX,
-                maxX,
-                minZ,
-                maxZ
-            );
-
-        oreData.setGenerationProfile(profile);
-
-        registerOre(oreData);
-
-        return profile;
+    public OreData getOreData(Block block, int metadata) {
+        return ores.get(new OreKey(block, metadata));
     }
 
     @SubscribeEvent
-    public void onPlayerTick(
-        TickEvent.PlayerTickEvent event
-    ) {
+    public void onPlayerTick(TickEvent.PlayerTickEvent event) {
 
-        if (event.phase != TickEvent.Phase.END) {
-            return;
-        }
-
-        if (event.player.worldObj.isRemote) {
-            return;
-        }
-
-        if (profiled) {
-            return;
-        }
+        if (event.phase != TickEvent.Phase.END) return;
+        if (event.player.worldObj.isRemote)     return;
+        if (profiled)                           return;
 
         profiled = true;
 
         EntityPlayer player = event.player;
+        World        world  = player.worldObj;
 
-        int playerX =
-            (int) player.posX;
+        int playerX = (int) player.posX;
+        int playerZ = (int) player.posZ;
 
-        int playerZ =
-            (int) player.posZ;
+        // ── Discovery (unchanged) ──────────────────────────────────────────────
+        int minX = playerX - 64;
+        int maxX = playerX + 64;
+        int minZ = playerZ - 64;
+        int maxZ = playerZ + 64;
 
-        List<OreDiscoveryResult> results =
-            discovery.discover(
-                player.worldObj,
-                playerX - 16,
-                playerX + 16,
-                0,
-                128,
-                playerZ - 16,
-                playerZ + 16
-            );
+        List<OreDiscoveryResult> discovered =
+            discovery.discover(world, minX, maxX, 0, 128, minZ, maxZ);
+        discovery.registerDiscoveredOres(discovered);
 
-        discovery.registerDiscoveredOres(results);
+        // ── Chunk-based profiling (JER-style) ─────────────────────────────────
+        List<OreData> oresToProfile = OreRegistry.getOres();
 
-        System.out.println(
-            "=== DISCOVERY RESULTS ==="
-        );
+        System.out.println("=== NER PROFILING (chunk-based) ===");
+        System.out.println("Ores:         " + oresToProfile.size());
+        System.out.println("Total chunks: " + OreProfiler.TOTAL_CHUNKS
+            + "  batch: " + OreProfiler.CHUNKS_PER_BATCH);
 
-        for (OreDiscoveryResult result : results) {
+        long startMs = System.currentTimeMillis();
 
-            OreData oreData =
-                OreRegistry.getOre(
-                    result.getBlock(),
-                    result.getMetadata()
-                );
+        Map<OreData, OreGenerationProfile> profiles =
+            profiler.profileByChunks(world, oresToProfile);
 
-            if (oreData == null) {
-                continue;
-            }
+        long elapsedMs = System.currentTimeMillis() - startMs;
+        System.out.println("Profiling completed in " + elapsedMs + " ms");
 
-            System.out.println(
-                "Discovered ore: " +
-                    oreData.getName() +
-                    " Meta=" +
-                    oreData.getMetadata() +
-                    " Y=" +
-                    oreData.getMinY() +
-                    "-" +
-                    oreData.getMaxY()
-            );
+        // ── Apply profiles ─────────────────────────────────────────────────────
+        long samplesPerY = (long) OreProfiler.TOTAL_CHUNKS * 16L * 16L;
 
-            profileOre(
-                player.worldObj,
-                oreData,
-                playerX - 16,
-                playerX + 16,
-                playerZ - 16,
-                playerZ + 16
-            );
+        for (OreData oreData : oresToProfile) {
+            OreGenerationProfile profile = profiles.get(oreData);
+            if (profile == null) continue;
 
-            System.out.println(
-                "=== PROFILE: " +
-                    oreData.getName() +
-                    " ==="
-            );
+            oreData.setGenerationProfile(profile);
+            registerOre(oreData);
 
-            for (
-                int y = oreData.getMinY();
-                y <= oreData.getMaxY();
-                y++
-            ) {
-
-                double probability =
-                    oreData
-                        .getGenerationProfile()
-                        .getProbability(y);
-
-                System.out.println(
-                    "Y=" + y +
-                        " Probability=" +
-                        String.format("%.2f%%", probability * 100.0)
-                );
-            }
-
-            double peakProbability =
-                oreData
-                    .getGenerationProfile()
-                    .getPeakProbability();
-
-            int peakY =
-                oreData
-                    .getGenerationProfile()
-                    .getPeakY();
-
-            System.out.println(
-                "Peak: Y=" + peakY +
-                    " Probability=" +
-                    String.format("%.2f%%", peakProbability * 100.0)
-            );
+            System.out.println("Ore: " + oreData.getName()
+                + "  Y=" + oreData.getMinY() + "-" + oreData.getMaxY()
+                + "  Samples/Y=" + samplesPerY
+                + "  Peak: Y=" + profile.getPeakY()
+                + " (" + String.format("%.4f%%", profile.getPeakProbability() * 100.0) + ")");
         }
 
-        System.out.println(
-            "========================="
-        );
+        System.out.println("=== NER PROFILING COMPLETE ===");
+    }
+
+    // ── Inner helper kept for backward compat with OreProfilerTest ────────────
+
+    public OreGenerationProfile profileOre(
+        World world,
+        OreData oreData,
+        int minX, int maxX,
+        int minZ, int maxZ
+    ) {
+        OreGenerationProfile profile =
+            profiler.profile(world, oreData, minX, maxX, minZ, maxZ);
+        oreData.setGenerationProfile(profile);
+        registerOre(oreData);
+        return profile;
     }
 }
