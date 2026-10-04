@@ -4,11 +4,16 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import net.minecraft.block.Block;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.ItemStack;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.World;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.TreeMap;
 
 public class OreGenerationManager {
 
@@ -16,6 +21,9 @@ public class OreGenerationManager {
     private OreDiscovery discovery;
 
     private boolean profiled = false;
+
+    // Set for the headless check (see NotEnoughResources.serverStarted): log every result in full
+    private static final boolean HEADLESS_CHECK = System.getenv("NER_PROFILE_ON_START") != null;
 
     private Map<OreKey, OreData> ores;
 
@@ -62,42 +70,100 @@ public class OreGenerationManager {
 
         List<OreDiscoveryResult> discovered =
             discovery.discover(world, minX, maxX, 0, 128, minZ, maxZ);
-        discovery.registerDiscoveredOres(discovered);
+        discovery.registerDiscoveredOres(discovered, world.provider.dimensionId);
 
-        // ── Chunk-based profiling (JER-style) ─────────────────────────────────
-        List<OreData> oresToProfile = OreRegistry.getOres();
+        profileRegisteredOres();
+    }
 
-        System.out.println("=== NER PROFILING (chunk-based) ===");
-        System.out.println("Ores:         " + oresToProfile.size());
-        System.out.println("Total chunks: " + OreProfiler.TOTAL_CHUNKS
-            + "  batch: " + OreProfiler.CHUNKS_PER_BATCH);
+    /**
+     * Profiles every registered ore, one chunk-based (JER-style) pass per dimension.
+     * Needs a running server; nothing is read from or written to its save.
+     */
+    public void profileRegisteredOres() {
+        profiled = true;
 
-        long startMs = System.currentTimeMillis();
+        Map<Integer, List<OreData>> oresByDimension = new TreeMap<Integer, List<OreData>>();
+        for (OreData oreData : OreRegistry.getOres()) {
+            List<OreData> list = oresByDimension.get(oreData.getDimension());
+            if (list == null) {
+                list = new ArrayList<OreData>();
+                oresByDimension.put(oreData.getDimension(), list);
+            }
+            list.add(oreData);
+        }
 
-        Map<OreData, OreGenerationProfile> profiles =
-            profiler.profileByChunks(world, oresToProfile);
+        // Seed and world settings are the same for every dimension of the save
+        World overworld = MinecraftServer.getServer().worldServerForDimension(0);
 
-        long elapsedMs = System.currentTimeMillis() - startMs;
-        System.out.println("Profiling completed in " + elapsedMs + " ms");
+        for (Map.Entry<Integer, List<OreData>> entry : oresByDimension.entrySet()) {
+            int dimension = entry.getKey();
+            List<OreData> oresToProfile = entry.getValue();
 
-        // ── Apply profiles ─────────────────────────────────────────────────────
-        long samplesPerY = (long) OreProfiler.TOTAL_CHUNKS * 16L * 16L;
+            System.out.println("=== NER PROFILING (chunk-based), dimension " + dimension + " ===");
+            System.out.println("Ores: " + oresToProfile.size());
 
-        for (OreData oreData : oresToProfile) {
-            OreGenerationProfile profile = profiles.get(oreData);
-            if (profile == null) continue;
+            long startMs = System.currentTimeMillis();
 
-            oreData.setGenerationProfile(profile);
-            registerOre(oreData);
+            Map<OreData, OreGenerationProfile> profiles =
+                profiler.profileByChunks(overworld, dimension, oresToProfile);
 
-            System.out.println("Ore: " + oreData.getName()
-                + "  Y=" + oreData.getMinY() + "-" + oreData.getMaxY()
-                + "  Samples/Y=" + samplesPerY
-                + "  Peak: Y=" + profile.getPeakY()
-                + " (" + String.format("%.4f%%", profile.getPeakProbability() * 100.0) + ")");
+            long elapsedMs = System.currentTimeMillis() - startMs;
+            System.out.println("Profiling completed in " + elapsedMs + " ms");
+
+            // ── Apply profiles ─────────────────────────────────────────────────
+            for (OreData oreData : oresToProfile) {
+                OreGenerationProfile profile = profiles.get(oreData);
+                if (profile == null) continue;
+
+                oreData.setGenerationProfile(profile);
+                registerOre(oreData);
+
+                System.out.println("Ore: " + oreData.getName()
+                    + "  Y=" + oreData.getMinY() + "-" + oreData.getMaxY()
+                    + "  Peak: Y=" + profile.getPeakY()
+                    + " (" + String.format("%.4f%%", profile.getPeakProbability() * 100.0) + ")");
+                if (HEADLESS_CHECK) logResource(oreData, profile);
+            }
         }
 
         System.out.println("=== NER PROFILING COMPLETE ===");
+    }
+
+    /** Everything the World Generation entry of a resource shows, as one log line. */
+    private static void logResource(OreData oreData, OreGenerationProfile profile) {
+        double blocksPerChunk = 0.0;
+        int lowestY = -1;
+        int highestY = -1;
+        for (int y = oreData.getMinY(); y <= oreData.getMaxY(); y++) {
+            double probability = profile.getProbability(y);
+            if (probability > 0.0) {
+                if (lowestY < 0) lowestY = y;
+                highestY = y;
+            }
+            blocksPerChunk += probability * 256.0;
+        }
+
+        StringBuilder drops = new StringBuilder();
+        for (ItemStack drop : oreData.getDrops()) {
+            DropStatistics stats = oreData.getDropStatistics(drop);
+            drops.append(drop.getDisplayName());
+            if (stats != null) {
+                drops.append(String.format(Locale.ROOT, " avg[%.2f %.2f %.2f %.2f]%s",
+                    stats.getAverage(0), stats.getAverage(1), stats.getAverage(2), stats.getAverage(3),
+                    stats.isExact() ? "" : " sampled"));
+            }
+            drops.append("; ");
+        }
+
+        System.out.println("=== NER WORLDGEN RESOURCE === " + oreData.getName()
+            + " | mod=" + oreData.getModName()
+            + " | block=" + Block.blockRegistry.getNameForObject(oreData.getBlock()) + ":" + oreData.getMetadata()
+            + " | dim=" + oreData.getDimension() + " (" + oreData.getDimensionName() + ")"
+            + " | Y " + lowestY + ".." + highestY
+            + String.format(Locale.ROOT, " | %.3f blocks/chunk", blocksPerChunk)
+            + " | biomes=" + profile.getSpawnBiomes()
+            + " | silk=" + oreData.isSilkTouchNeeded()
+            + " | drops: " + drops);
     }
 
     // ── Inner helper kept for backward compat with OreProfilerTest ────────────

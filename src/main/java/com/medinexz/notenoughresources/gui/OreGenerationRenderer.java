@@ -1,18 +1,28 @@
 package com.medinexz.notenoughresources.gui;
 
 import codechicken.lib.gui.GuiDraw;
+import com.medinexz.notenoughresources.core.DropStatistics;
+import com.medinexz.notenoughresources.core.OreData;
 import com.medinexz.notenoughresources.core.OreGenerationLayout;
 import com.medinexz.notenoughresources.core.OreGenerationProfile;
+import net.minecraft.enchantment.Enchantment;
+import net.minecraft.util.EnumChatFormatting;
 import org.lwjgl.opengl.GL11;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 public class OreGenerationRenderer {
 
-    private static final int COLOR_GRAPH = 0xFF44AA44;
+    private static final int COLOR_GRAPH = 0xFF000000;
     private static final int COLOR_AXIS  = 0xFF888888;
     private static final int COLOR_TEXT  = 0xFF333333;
+
+    private static final int MAX_BIOME_LINES = 8;
+
+    private static final int DROP_CHANCES_PER_LINE = 3;
 
     private final OreGenerationLayout layout;
 
@@ -84,7 +94,7 @@ public class OreGenerationRenderer {
 
         String pctStr;
         if (chance == 0.0 || chance > 0.01) {
-            pctStr = String.format("%.2f%%", chance);
+            pctStr = String.format(Locale.ROOT, "%.2f%%", chance);
         } else {
             pctStr = "<0.01%";
         }
@@ -92,6 +102,76 @@ public class OreGenerationRenderer {
         List<String> tooltip = new ArrayList<String>();
         tooltip.add("Y: " + yValue + " (" + pctStr + ")");
         return tooltip;
+    }
+
+    // Extends the ore item's tooltip (which already starts with the item name) with
+    // mod name, Silk Touch requirement and spawn biomes taken from the ore data
+    public void addOreTooltip(List<String> tooltip, OreData oreData) {
+        String modName = oreData.getModName();
+        boolean hasModName = false;
+        for (String line : tooltip) {
+            String plain = EnumChatFormatting.getTextWithoutFormattingCodes(line);
+            if (plain != null && plain.trim().equals(modName)) hasModName = true;
+        }
+        if (!hasModName) {
+            tooltip.add(Math.min(1, tooltip.size()),
+                EnumChatFormatting.BLUE.toString() + EnumChatFormatting.ITALIC + modName);
+        }
+
+        if (oreData.isSilkTouchNeeded()) {
+            tooltip.add(EnumChatFormatting.DARK_AQUA + "Silk Touch Needed");
+        }
+
+        List<String> biomes = oreData.getSpawnBiomes();
+        if (!biomes.isEmpty()) {
+            tooltip.add("Spawn Biomes:");
+            int shown = biomes.size() > MAX_BIOME_LINES ? MAX_BIOME_LINES - 1 : biomes.size();
+            for (int i = 0; i < shown; i++) {
+                tooltip.add("  " + biomes.get(i));
+            }
+            if (shown < biomes.size()) {
+                tooltip.add("  ... and " + (biomes.size() - shown) + " more");
+            }
+        }
+    }
+
+    // Extends a drop item's tooltip with its average amount per Fortune level, or
+    // (detailed) with the chance of every possible amount.  Every level is listed,
+    // also for blocks that Fortune does not affect.
+    public void addDropTooltip(List<String> tooltip, DropStatistics drop, boolean detailed) {
+        tooltip.add(detailed ? "Drop Chances:" : "Avg. Drops:");
+
+        for (int fortune = 0; fortune <= DropStatistics.MAX_FORTUNE; fortune++) {
+            Map<Integer, Double> distribution = drop.getDistribution(fortune);
+
+            String level = fortune == 0 ? "Normal" : Enchantment.fortune.getTranslatedName(fortune);
+
+            if (!detailed) {
+                tooltip.add("  " + level + ": " + String.format(Locale.ROOT, "%.2f", drop.getAverage(fortune)));
+                continue;
+            }
+
+            tooltip.add("  " + level + ":");
+            StringBuilder line = new StringBuilder();
+            int onLine = 0;
+            for (Map.Entry<Integer, Double> chance : distribution.entrySet()) {
+                if (onLine == DROP_CHANCES_PER_LINE) {
+                    tooltip.add(line.toString());
+                    line = new StringBuilder();
+                    onLine = 0;
+                }
+                line.append(onLine == 0 ? "    " : "   ")
+                    .append(chance.getKey()).append(": ")
+                    .append(String.format(Locale.ROOT, "%.2f%%", chance.getValue() * 100.0));
+                onLine++;
+            }
+            if (onLine > 0) tooltip.add(line.toString());
+        }
+
+        if (!detailed) {
+            tooltip.add(EnumChatFormatting.DARK_GRAY.toString() + EnumChatFormatting.ITALIC
+                + "Hold Shift for drop chances");
+        }
     }
 
     public boolean isOnGraph(int localMouseX, int localMouseY) {
@@ -121,7 +201,7 @@ public class OreGenerationRenderer {
         String zeroPct = "0%";
         drawSmallStringRight(zeroPct, xPct, yPctBottom, COLOR_TEXT);
 
-        String maxPct = String.format("%.2f%%", maxProbability * 100.0);
+        String maxPct = String.format(Locale.ROOT, "%.2f%%", maxProbability * 100.0);
         drawSmallStringRight(maxPct, xPct, graphY - graphHeight - 7, COLOR_TEXT);
 
         // X-axis labels: minY, midY, maxY (below baseline)
@@ -134,10 +214,12 @@ public class OreGenerationRenderer {
         drawSmallStringCentered(String.valueOf(maxY), graphX + graphWidth, labelY, COLOR_TEXT);
         drawSmallStringCentered(String.valueOf(midY), graphX + graphWidth / 2, labelY, COLOR_TEXT);
 
-        // Peak info (below X-axis labels)
+        // Best Y (two lines directly under the ore slot)
         int peakY = profile.getPeakY();
-        int peakLabelY = graphY + 10;
-        drawSmallString("Peak Y:" + peakY, graphX, peakLabelY, COLOR_TEXT);
+        int bestX = graphX - layout.getGraphX() + layout.getBestLabelX();
+        int bestY = graphY - layout.getGraphY() + layout.getBestLabelY();
+        drawSmallString("Best:", bestX, bestY, COLOR_TEXT);
+        drawSmallString("Y=" + peakY, bestX, bestY + layout.getBestLineHeight(), COLOR_TEXT);
     }
 
     private void drawLine(double x1, double y1, double x2, double y2, int colorRGB) {

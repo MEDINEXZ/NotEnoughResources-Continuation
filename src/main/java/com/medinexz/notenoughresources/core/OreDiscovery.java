@@ -66,7 +66,8 @@ public class OreDiscovery {
     }
 
     public void registerDiscoveredOres(
-        List<OreDiscoveryResult> results
+        List<OreDiscoveryResult> results,
+        int dimension
     ) {
         for (OreDiscoveryResult result : results) {
 
@@ -75,7 +76,8 @@ public class OreDiscovery {
                 result.getBlock(),
                 result.getMetadata(),
                 result.getMinY(),
-                result.getMaxY()
+                result.getMaxY(),
+                dimension
             );
 
             OreRegistry.register(oreData);

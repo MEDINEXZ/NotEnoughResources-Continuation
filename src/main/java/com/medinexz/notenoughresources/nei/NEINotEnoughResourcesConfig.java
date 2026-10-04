@@ -3,6 +3,7 @@ package com.medinexz.notenoughresources.nei;
 import codechicken.nei.api.API;
 import codechicken.nei.api.IConfigureNEI;
 
+import com.medinexz.notenoughresources.NotEnoughResources;
 import com.medinexz.notenoughresources.gui.OreGenerationNEIHandler;
 
 public class NEINotEnoughResourcesConfig
@@ -17,7 +18,7 @@ public class NEINotEnoughResourcesConfig
 
     @Override
     public String getName() {
-        return "NotEnoughResources Continuation";
+        return NotEnoughResources.MODNAME;
     }
 
     @Override

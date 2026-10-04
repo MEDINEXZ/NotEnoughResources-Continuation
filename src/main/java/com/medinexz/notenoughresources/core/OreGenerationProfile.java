@@ -1,11 +1,17 @@
 package com.medinexz.notenoughresources.core;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class OreGenerationProfile {
 
     private int minY;
     private int maxY;
 
     private double[] probability;
+
+    // Biomes the ore is restricted to; empty when it generates everywhere (or is unknown)
+    private List<String> spawnBiomes = new ArrayList<String>();
 
     public OreGenerationProfile(int minY, int maxY) {
         this.minY = minY;
@@ -52,6 +58,14 @@ public class OreGenerationProfile {
         }
 
         return peakY;
+    }
+
+    public List<String> getSpawnBiomes() {
+        return spawnBiomes;
+    }
+
+    public void setSpawnBiomes(List<String> spawnBiomes) {
+        this.spawnBiomes = spawnBiomes;
     }
 
     public int getMinY() {

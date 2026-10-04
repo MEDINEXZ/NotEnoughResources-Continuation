@@ -37,6 +37,8 @@ public class VanillaOreDetector implements IOreDetector {
             || block == Blocks.emerald_ore
             || block == Blocks.clay
             || block == Blocks.pumpkin
-            || block == Blocks.melon_block;
+            || block == Blocks.melon_block
+            || block == Blocks.quartz_ore
+            || block == Blocks.glowstone;
     }
 }

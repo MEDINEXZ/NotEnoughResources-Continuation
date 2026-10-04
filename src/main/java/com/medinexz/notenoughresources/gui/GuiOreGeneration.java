@@ -16,9 +16,6 @@ public class GuiOreGeneration extends GuiScreen {
     private static final ResourceLocation TEXTURE =
         new ResourceLocation("notenoughresources", "textures/gui/world_gen.png");
 
-    private static final int GUI_WIDTH  = 166;
-    private static final int GUI_HEIGHT = 90;
-
     private final OreData oreData;
     private final OreGenerationLayout layout;
     private final OreGenerationBackground background;
@@ -27,7 +24,7 @@ public class GuiOreGeneration extends GuiScreen {
     public GuiOreGeneration(OreData oreData) {
         this.oreData    = oreData;
         this.layout     = new OreGenerationLayout();
-        this.background = new OreGenerationBackground(TEXTURE, GUI_WIDTH, GUI_HEIGHT);
+        this.background = new OreGenerationBackground(TEXTURE, layout);
         this.renderer   = new OreGenerationRenderer(layout);
     }
 
@@ -35,8 +32,8 @@ public class GuiOreGeneration extends GuiScreen {
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
 
-        int guiLeft = (width  - GUI_WIDTH)  / 2;
-        int guiTop  = (height - GUI_HEIGHT) / 2;
+        int guiLeft = (width  - layout.getEntryWidth())  / 2;
+        int guiTop  = (height - layout.getEntryHeight()) / 2;
 
         background.draw(guiLeft, guiTop);
 
@@ -44,7 +41,7 @@ public class GuiOreGeneration extends GuiScreen {
             // Ore name title
             String name = oreData.getName();
             int nameW = GuiDraw.getStringWidth(name);
-            GuiDraw.drawString(name, guiLeft + (GUI_WIDTH - nameW) / 2, guiTop + 1, 0xFF222222, false);
+            GuiDraw.drawString(name, guiLeft + (layout.getEntryWidth() - nameW) / 2, guiTop + layout.getTitleY(), 0xFF222222, false);
 
             OreGenerationProfile profile = oreData.getGenerationProfile();
             renderer.drawGraph(profile, guiLeft, guiTop);

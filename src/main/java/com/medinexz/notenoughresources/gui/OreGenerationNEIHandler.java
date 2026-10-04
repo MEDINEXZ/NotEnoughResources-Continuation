@@ -1,9 +1,11 @@
 package com.medinexz.notenoughresources.gui;
 
 import codechicken.lib.gui.GuiDraw;
+import codechicken.nei.NEIClientUtils;
 import codechicken.nei.PositionedStack;
 import codechicken.nei.recipe.GuiRecipe;
 import codechicken.nei.recipe.TemplateRecipeHandler;
+import com.medinexz.notenoughresources.core.DropStatistics;
 import com.medinexz.notenoughresources.core.OreData;
 import com.medinexz.notenoughresources.core.OreGenerationLayout;
 import com.medinexz.notenoughresources.core.OreGenerationProfile;
@@ -21,11 +23,17 @@ import java.util.List;
 
 public class OreGenerationNEIHandler extends TemplateRecipeHandler {
 
-    private static final int GUI_WIDTH  = 166;
-    private static final int GUI_HEIGHT = 90;
+    public static final String HANDLER_ID = "notenoughresources_ore_generation";
+
+    public static final String RECIPE_NAME = "World Generation";
 
     private static final OreGenerationLayout LAYOUT =
         new OreGenerationLayout();
+
+    // Size of one entry; NEI fits as many entries on a page as the recipe GUI height allows
+    public static final int GUI_WIDTH  = LAYOUT.getEntryWidth();
+    public static final int GUI_HEIGHT = LAYOUT.getEntryHeight();
+    public static final int ENTRY_STEP = LAYOUT.getEntryStep();
 
     private static final OreGenerationRenderer RENDERER =
         new OreGenerationRenderer(LAYOUT);
@@ -33,7 +41,7 @@ public class OreGenerationNEIHandler extends TemplateRecipeHandler {
     private static final OreGenerationBackground BACKGROUND =
         new OreGenerationBackground(
             new ResourceLocation("notenoughresources", "textures/gui/world_gen.png"),
-            GUI_WIDTH, GUI_HEIGHT
+            LAYOUT
         );
 
     // ── CachedRecipe ─────────────────────────────────────────────────────────
@@ -63,8 +71,8 @@ public class OreGenerationNEIHandler extends TemplateRecipeHandler {
             List<ItemStack> drops = oreData.getDrops();
             int dropX = LAYOUT.getDropsX();
             int dropY = LAYOUT.getDropsY();
-            for (int i = 0; i < drops.size() && i < 8; i++) {
-                stacks.add(new PositionedStack(drops.get(i), dropX + i * 18, dropY));
+            for (int i = 0; i < drops.size() && i < LAYOUT.getMaxDrops(); i++) {
+                stacks.add(new PositionedStack(drops.get(i), dropX + i * LAYOUT.getDropSpacing(), dropY));
             }
             return stacks;
         }
@@ -84,16 +92,29 @@ public class OreGenerationNEIHandler extends TemplateRecipeHandler {
         loadForItem(result);
     }
 
+    // ── Show All Recipes ─────────────────────────────────────────────────────
+
+    @Override
+    public void loadCraftingRecipes(String outputId, Object... results) {
+        if ("all".equals(outputId) || HANDLER_ID.equals(outputId)) {
+            for (OreData oreData : OreRegistry.getOres()) {
+                if (oreData.hasGenerationData()) arecipes.add(new CachedOreGenerationRecipe(oreData));
+            }
+        } else {
+            super.loadCraftingRecipes(outputId, results);
+        }
+    }
+
     private void loadForItem(ItemStack itemStack) {
         if (itemStack == null) return;
 
         Block block = Block.getBlockFromItem(itemStack.getItem());
         int metadata = itemStack.getItemDamage();
-        OreData oreData = OreRegistry.getOre(block, metadata);
 
-        if (oreData == null) return;
-
-        arecipes.add(new CachedOreGenerationRecipe(oreData));
+        // One entry per dimension the block generates in
+        for (OreData oreData : OreRegistry.getOres(block, metadata)) {
+            if (oreData.hasGenerationData()) arecipes.add(new CachedOreGenerationRecipe(oreData));
+        }
     }
 
     // ── Rendering ────────────────────────────────────────────────────────────
@@ -114,16 +135,16 @@ public class OreGenerationNEIHandler extends TemplateRecipeHandler {
         OreData oreData = cached.getOreData();
         OreGenerationProfile profile = oreData.getGenerationProfile();
 
-        // Ore name centred at the top of the recipe area
-        String oreName = oreData.getName();
-        int nameW = GuiDraw.getStringWidth(oreName);
+        // Dimension name centred at the top of the entry
+        String dimensionName = oreData.getDimensionName();
+        int nameW = GuiDraw.getStringWidth(dimensionName);
         GL11.glColor4f(1, 1, 1, 1);
-        GuiDraw.drawString(oreName, (GUI_WIDTH - nameW) / 2, 1, 0xFF222222, false);
+        GuiDraw.drawString(dimensionName, (GUI_WIDTH - nameW) / 2, LAYOUT.getTitleY(), 0xFF222222, false);
 
         // Draws label below drops row if any drops present
         if (!oreData.getDrops().isEmpty()) {
             GL11.glPushMatrix();
-            GL11.glTranslatef(LAYOUT.getDropsX(), LAYOUT.getDropsY() - 8, 0);
+            GL11.glTranslatef(LAYOUT.getDropsLabelX(), LAYOUT.getDropsLabelY(), 0);
             GL11.glScalef(0.5f, 0.5f, 1.0f);
             GuiDraw.drawString("Drops:", 0, 0, 0xFF333333, false);
             GL11.glPopMatrix();
@@ -170,19 +191,40 @@ public class OreGenerationNEIHandler extends TemplateRecipeHandler {
         return result;
     }
 
+    @Override
+    public List<String> handleItemTooltip(GuiRecipe<?> gui, ItemStack stack, List<String> currenttip, int recipe) {
+        List<String> result = super.handleItemTooltip(gui, stack, currenttip, recipe);
+
+        if (stack == null || recipe >= arecipes.size()) return result;
+
+        OreData oreData = ((CachedOreGenerationRecipe) arecipes.get(recipe)).getOreData();
+
+        if (Block.getBlockFromItem(stack.getItem()) == oreData.getBlock()
+            && stack.getItemDamage() == oreData.getMetadata()) {
+            RENDERER.addOreTooltip(result, oreData);
+        } else {
+            DropStatistics drop = oreData.getDropStatistics(stack);
+            if (drop != null) RENDERER.addDropTooltip(result, drop, NEIClientUtils.shiftKey());
+        }
+
+        return result;
+    }
+
     // ── Handler metadata ─────────────────────────────────────────────────────
 
     @Override
-    public String getRecipeName() { return "Ore Generation"; }
+    public String getRecipeName() { return RECIPE_NAME; }
+
+    @Override
+    public String getOverlayIdentifier() { return HANDLER_ID; }
 
     @Override
     public String getGuiTexture() {
         return "notenoughresources:textures/gui/world_gen.png";
     }
 
+    // No recipiesPerPage() override: NEI's RecipePageManager fills each page with as
+    // many entries of this height as fit into the recipe GUI (see NEIHandlerInfoRegistrar)
     @Override
-    public int recipiesPerPage() { return 1; }
-
-    @Override
-    public int getRecipeHeight(int recipe) { return GUI_HEIGHT; }
+    public int getRecipeHeight(int recipe) { return ENTRY_STEP; }
 }

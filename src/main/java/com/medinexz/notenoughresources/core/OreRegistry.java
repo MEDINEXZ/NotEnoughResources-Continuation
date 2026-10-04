@@ -36,8 +36,9 @@ public class OreRegistry {
 
     public static void register(OreData oreData) {
         for (OreData existing : ores) {
-            if (existing.getBlock()    == oreData.getBlock()
-             && existing.getMetadata() == oreData.getMetadata()) {
+            if (existing.getBlock()     == oreData.getBlock()
+             && existing.getMetadata()  == oreData.getMetadata()
+             && existing.getDimension() == oreData.getDimension()) {
                 return; // already registered — skip duplicate
             }
         }
@@ -54,6 +55,18 @@ public class OreRegistry {
         return null;
     }
 
+    /** All entries of a block, one per dimension it generates in. */
+    public static List<OreData> getOres(Block block, int metadata) {
+        List<OreData> result = new ArrayList<OreData>();
+        for (OreData oreData : ores) {
+            if (oreData.getBlock()    == block
+             && oreData.getMetadata() == metadata) {
+                result.add(oreData);
+            }
+        }
+        return result;
+    }
+
     public static List<OreData> getOres() {
         return ores;
     }
@@ -65,7 +78,7 @@ public class OreRegistry {
      * Call this once during mod {@code init()} before world join.
      */
     public static void registerVanillaOres() {
-        register(new OreData("Coal Ore",      Blocks.coal_ore,      0, 0,  128));
+        register(new OreData("Coal Ore",      Blocks.coal_ore,      0, 0,  255));
         register(new OreData("Iron Ore",      Blocks.iron_ore,      0, 0,   128));
         register(new OreData("Gold Ore",      Blocks.gold_ore,      0, 0,   128));
         register(new OreData("Redstone Ore",  Blocks.redstone_ore,  0, 0,   128));
@@ -75,6 +88,10 @@ public class OreRegistry {
         register(new OreData("Clay", Blocks.clay, 0, 0, 128));
         register(new OreData("Pumpkin", Blocks.pumpkin, 0, 0, 128));
         register(new OreData("Melon", Blocks.melon_block, 0, 0, 128));
+
+        // Nether (dimension -1)
+        register(new OreData("Nether Quartz Ore", Blocks.quartz_ore, 0, 0, 255, -1));
+        register(new OreData("Glowstone",         Blocks.glowstone,  0, 0, 255, -1));
     }
 
     // ── Modded / additional ores ──────────────────────────────────────────────
