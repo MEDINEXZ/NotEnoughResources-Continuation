@@ -25,6 +25,23 @@ public class NERIntegrationManager {
         { "thebetweenlands", PACKAGE + "betweenlands.BetweenlandsIntegration" },
         { "atum",            PACKAGE + "atum.AtumIntegration" },
         { "tropicraft",      PACKAGE + "tropicraft.TropicraftIntegration" },
+        { "arsmagica2",      PACKAGE + "arsmagica2.ArsMagica2Integration" },
+        { "abyssalcraft",    PACKAGE + "abyssalcraft.AbyssalCraftIntegration" },
+        { "evilcraft",       PACKAGE + "evilcraft.EvilCraftIntegration" },
+        { "IC2",             PACKAGE + "ic2.IC2Integration" },
+        { "Mekanism",        PACKAGE + "mekanism.MekanismIntegration" },
+        { "Forestry",        PACKAGE + "forestry.ForestryIntegration" },
+        { "ImmersiveEngineering", PACKAGE + "immersiveengineering.ImmersiveEngineeringIntegration" },
+        { "ThermalFoundation", PACKAGE + "thermalfoundation.ThermalFoundationIntegration" },
+        { "BigReactors",     PACKAGE + "bigreactors.BigReactorsIntegration" },
+        { "Railcraft",       PACKAGE + "railcraft.RailcraftIntegration" },
+        { "NetherOres",      PACKAGE + "netherores.NetherOresIntegration" },
+        { "appliedenergistics2", PACKAGE + "appliedenergistics2.AppliedEnergistics2Integration" },
+        { "BuildCraft|Energy", PACKAGE + "buildcraft.BuildCraftIntegration" },
+        { "MineFactoryReloaded", PACKAGE + "minefactoryreloaded.MineFactoryReloadedIntegration" },
+        { "ModularForcefieldSystem", PACKAGE + "mffs.ModularForcefieldSystemIntegration" },
+        // Thaumcraft and, through it, the addons installed next to it
+        { "Thaumcraft",      PACKAGE + "thaumcraft.ThaumcraftEcosystemManager" },
     };
 
     /** Call once all mods have finished their own registration (load complete). */

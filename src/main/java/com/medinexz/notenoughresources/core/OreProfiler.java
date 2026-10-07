@@ -5,9 +5,7 @@ import com.medinexz.notenoughresources.NotEnoughResources;
 import cpw.mods.fml.common.registry.GameRegistry;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.IChunkProvider;
-import net.minecraft.world.gen.ChunkProviderServer;
 
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -18,11 +16,16 @@ import java.util.Random;
 public class OreProfiler {
 
     // ── Chunk-based profiling constants (JER-style) ───────────────────────────
-    static final int TOTAL_CHUNKS    = 1000;
+    // Overworld chunks: enough for features of a single biome that only generate in
+    // one chunk out of dozens (a mod's desert flowers) to be found in most worlds,
+    // at about 5 ms per chunk
+    static final int TOTAL_CHUNKS    = 2000;
     static final int CHUNKS_PER_BATCH =  25;
 
-    // Chunks profiled in dimensions that need real terrain generated around each
-    // of them (much slower per chunk than the overworld's fixed strata)
+    // Side of the square groups the profiled chunks are taken in
+    private static final int GROUP_SIDE = 4;
+
+    // Chunks profiled in every other dimension
     static final int GENERATED_TERRAIN_CHUNKS = 250;
 
     // Chunk coordinate range for random sampling: ±1875 chunks (~30 000 blocks)
@@ -37,17 +40,13 @@ public class OreProfiler {
     private static final double MAX_RESTRICTED_SHARE = 0.5;
 
     /**
-     * JER-style profiling: generate synthetic ore population across
-     * {@code TOTAL_CHUNKS} random chunks and accumulate block counts per Y level.
+     * JER-style profiling: generates the terrain of random chunks of the dimension,
+     * populates them and counts the blocks of each ore per Y level.
      *
-     * <p>Uses the real {@code ChunkProviderGenerate} from the running server, but
-     * temporarily redirects its {@code worldObj} to a {@link ProfilerWorld} that
-     * intercepts {@code setBlock()} calls.  Nothing is written to the actual save.</p>
+     * <p>Everything happens in a {@link ProfilerWorld} with a chunk generator of its
+     * own; the server's generator and save are not touched.</p>
      *
-     * <p>Falls back to {@link #profileAll} if the terrain generator is not
-     * {@code ChunkProviderGenerate} (e.g. a modded dimension generator).</p>
-     *
-     * @param realWorld    the live server-side overworld
+     * @param realWorld    the live server-side overworld (seed and world settings)
      * @param dimension    the dimension the ores generate in
      * @param ores         ores to profile (from OreRegistry)
      * @return map from OreData to its computed OreGenerationProfile
@@ -62,73 +61,50 @@ public class OreProfiler {
         ProfilerChunkProvider profilerProvider = new ProfilerChunkProvider();
         ProfilerWorld profilerWorld;
         IChunkProvider generator;
-        Field worldObjField = null;
-        World savedWorldObj = null;
         int totalChunks;
 
-        if (dimension == 0) {
-            // ── Overworld: the server's own generator, redirected to the profiler world ──
-            if (!(realWorld.getChunkProvider() instanceof ChunkProviderServer)) {
-                return profileAll(realWorld, ores, -64, 64, -64, 64);
-            }
-            ChunkProviderServer cps = (ChunkProviderServer) realWorld.getChunkProvider();
-            generator = cps.currentChunkProvider; // ChunkProviderGenerate in vanilla
-
-            worldObjField = findWorldField(generator);
-
-            if (worldObjField == null) {
-                // Not ChunkProviderGenerate — fall back to scanning loaded world area
-                return profileAll(realWorld, ores, -64, 64, -64, 64);
-            }
-
+        // A generator of the profiler world's own, which also supplies the terrain the
+        // features are placed into.  The server's real generator is not touched.
+        try {
             profilerWorld = new ProfilerWorld(realWorld, dimension);
             profilerWorld.beginProfiling(ores);
-
-            try {
-                savedWorldObj = (World) worldObjField.get(generator);
-                worldObjField.set(generator, profilerWorld);
-            } catch (Exception e) {
-                return profileAll(realWorld, ores, -64, 64, -64, 64);
-            }
-            totalChunks = TOTAL_CHUNKS;
-        } else {
-            // ── Other dimensions: a generator of the profiler world's own, which also
-            //    supplies the terrain the features are placed into.  The server's real
-            //    generator is not touched. ──
-            try {
-                profilerWorld = new ProfilerWorld(realWorld, dimension);
-                profilerWorld.beginProfiling(ores);
-                generator = profilerWorld.provider.createChunkGenerator();
-                // Terrain comes from a second instance: generating a chunk reseeds the
-                // generator's random, which must not happen in the middle of populate()
-                profilerWorld.useGeneratedTerrain(profilerWorld.provider.createChunkGenerator());
-            } catch (Exception e) {
-                NotEnoughResources.LOG.warn("Cannot profile dimension " + dimension, e);
-                return new LinkedHashMap<OreData, OreGenerationProfile>();
-            }
-            totalChunks = GENERATED_TERRAIN_CHUNKS;
+            generator = profilerWorld.provider.createChunkGenerator();
+            // Terrain comes from a second instance: generating a chunk reseeds the
+            // generator's random, which must not happen in the middle of populate()
+            profilerWorld.useGeneratedTerrain(profilerWorld.provider.createChunkGenerator());
+        } catch (Exception e) {
+            NotEnoughResources.LOG.warn("Cannot profile dimension " + dimension, e);
+            return new LinkedHashMap<OreData, OreGenerationProfile>();
         }
+        totalChunks = dimension == 0 ? TOTAL_CHUNKS : GENERATED_TERRAIN_CHUNKS;
 
         // ── Profile totalChunks random chunks ─ ───────────────────────────────
         Random rand = new Random(realWorld.getSeed());
         int processed = 0;
         int failed = 0;
+        int groupX = 0;
+        int groupZ = 0;
 
         while (processed < totalChunks) {
             int batchEnd = Math.min(processed + CHUNKS_PER_BATCH, totalChunks);
             for (; processed < batchEnd; processed++) {
-                int cx = rand.nextInt(CHUNK_RANGE * 2 + 1) - CHUNK_RANGE;
-                int cz = rand.nextInt(CHUNK_RANGE * 2 + 1) - CHUNK_RANGE;
+                // Chunks are taken in square groups at random places: populating a chunk
+                // needs the terrain of its neighbours, which a group shares
+                int inGroup = processed % (GROUP_SIDE * GROUP_SIDE);
+                if (inGroup == 0) {
+                    groupX = rand.nextInt(CHUNK_RANGE * 2 + 1) - CHUNK_RANGE;
+                    groupZ = rand.nextInt(CHUNK_RANGE * 2 + 1) - CHUNK_RANGE;
+                }
+                int cx = groupX + inGroup % GROUP_SIDE;
+                int cz = groupZ + inGroup / GROUP_SIDE;
                 // populate() decorates with the biome at the centre of the populated area
                 profilerWorld.beginChunk(profilerWorld.getBiomeGenForCoords(cx * 16 + 16, cz * 16 + 16));
                 boolean complete = true;
                 try {
-                    if (dimension != 0) {
-                        // A generator only learns which structures (dungeons, hollow hills, ...)
-                        // reach a chunk while generating the terrain around it
-                        profilerWorld.setTerrainChunk(cx, cz, generator.provideChunk(cx, cz));
-                    }
-                    // Ores that are part of the terrain itself (generated-terrain mode only)
+                    // A generator only learns which structures (dungeons, hollow hills, ...)
+                    // reach a chunk while generating the terrain around it
+                    profilerWorld.setTerrainChunk(cx, cz, generator.provideChunk(cx, cz));
+                    // Ores that are part of the terrain itself
                     profilerWorld.countTerrainOres(cx, cz);
                     // Fire the real ore/feature population with our intercepting world
                     generator.populate(profilerProvider, cx, cz);
@@ -145,13 +121,6 @@ public class OreProfiler {
                 }
                 if (!complete) failed++;
             }
-        }
-
-        // ── Restore worldObj ─────────────────────────────────────────────────
-        if (worldObjField != null) {
-            try {
-                worldObjField.set(generator, savedWorldObj);
-            } catch (Exception ignored) {}
         }
 
         if (failed > 0) {
@@ -222,22 +191,6 @@ public class OreProfiler {
         biomes.addAll(oreChunksByBiome.keySet());
         Collections.sort(biomes);
         return biomes;
-    }
-
-    /**
-     * Searches the generator's declared fields for the first one typed as {@link World}.
-     * Works in both dev (field named "worldObj") and production (obfuscated name).
-     * Returns null if not found or not accessible.
-     */
-    private static Field findWorldField(Object generator) {
-        if (generator == null) return null;
-        for (Field f : generator.getClass().getDeclaredFields()) {
-            if (World.class.isAssignableFrom(f.getType())) {
-                f.setAccessible(true);
-                return f;
-            }
-        }
-        return null;
     }
 
     // ── Legacy API (kept for backward compatibility and fallback) ─────────────

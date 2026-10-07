@@ -1,6 +1,7 @@
 package com.medinexz.notenoughresources.core;
 
 import net.minecraft.block.Block;
+import net.minecraft.block.material.Material;
 import net.minecraft.entity.Entity;
 import net.minecraft.init.Blocks;
 import net.minecraft.nbt.NBTTagCompound;
@@ -17,6 +18,7 @@ import net.minecraft.world.chunk.storage.IChunkLoader;
 import net.minecraft.world.storage.IPlayerFileData;
 import net.minecraft.world.storage.ISaveHandler;
 import net.minecraft.world.storage.WorldInfo;
+import net.minecraftforge.common.util.ForgeDirection;
 
 import java.io.File;
 import java.util.HashMap;
@@ -86,6 +88,11 @@ public class ProfilerWorld extends World {
     private Map<Long, Integer> placedMetadata = new HashMap<Long, Integer>();
     private Map<Long, TileEntity> placedTileEntities = new HashMap<Long, TileEntity>();
     private static final int MAX_CACHED_TERRAIN_CHUNKS = 64;
+
+    // Flat overworld model: the last tracked block placed and where, for a generator
+    // that sets its variant with a second call right after placing it
+    private Block lastPlacedOre;
+    private Long lastPlacedPosition;
 
     /**
      * @param realWorld a live server world, used for the seed and world settings
@@ -222,6 +229,8 @@ public class ProfilerWorld extends World {
         placedBlocks.clear();
         placedMetadata.clear();
         placedTileEntities.clear();
+        lastPlacedOre = null;
+        lastPlacedPosition = null;
         if (terrainChunks.size() > MAX_CACHED_TERRAIN_CHUNKS) terrainChunks.clear();
         if (currentBiome != null) increment(chunksByBiome, currentBiome);
     }
@@ -254,11 +263,27 @@ public class ProfilerWorld extends World {
      * that are overridden anyway, but some code paths read the Chunk object
      * directly (e.g. light values, height maps).  Returning a consistent empty
      * Chunk prevents NPE without affecting ore counting.
+     *
+     * <p>In generated-terrain mode the generated chunk is returned instead: some
+     * generators look for the ground in the Chunk itself (BuildCraft's oil) and
+     * would find none in an empty one.</p>
      */
     @Override
     public Chunk getChunkFromChunkCoords(int cx, int cz) {
+        if (terrainGenerator != null) return getTerrainChunk(cx, cz);
+
         if (stubChunk == null) stubChunk = new Chunk(this, 0, 0);
         return stubChunk;
+    }
+
+    /**
+     * The default implementation asks the chunk provider for the chunk first,
+     * and the profiler world's provider has none.
+     */
+    @Override
+    public boolean isSideSolid(int x, int y, int z, ForgeDirection side, boolean _default) {
+        if (terrainGenerator == null) return super.isSideSolid(x, y, z, side, _default);
+        return getBlock(x, y, z).isSideSolid(this, x, y, z, side);
     }
 
     // ── Abstract method implementations ──────────────────────────────────────
@@ -367,6 +392,10 @@ public class ProfilerWorld extends World {
         }
         if (y >= 0 && y < 256 && currentOres != null && trackedBlocks.contains(block)) {
             countOre(block, meta, y);
+            if (terrainGenerator == null) {
+                lastPlacedOre = block;
+                lastPlacedPosition = positionKey(x, y, z);
+            }
         }
         return true;
     }
@@ -384,6 +413,10 @@ public class ProfilerWorld extends World {
             // A variant chosen after its block was placed
             Block block = getBlock(x, y, z);
             if (currentOres != null && trackedBlocks.contains(block)) countOre(block, meta, y);
+        }
+        if (terrainGenerator == null && lastPlacedOre != null && y >= 0 && y < 256
+            && positionKey(x, y, z).equals(lastPlacedPosition)) {
+            countOre(lastPlacedOre, meta, y);
         }
         return true;
     }
@@ -403,8 +436,35 @@ public class ProfilerWorld extends World {
      */
     @Override
     public int getTopSolidOrLiquidBlock(int x, int z) {
-        if (terrainGenerator != null) return getHeightValue(x, z);
-        return 63;
+        if (terrainGenerator == null) return 63;
+
+        // As in a real world: just above the highest block that stops movement,
+        // which under water is the water block on the bed
+        for (int y = getTerrainChunk(x >> 4, z >> 4).getTopFilledSegment() + 15; y > 0; y--) {
+            Block block = getGeneratedBlock(x, y, z);
+            if (block.getMaterial().blocksMovement()
+                && block.getMaterial() != Material.leaves
+                && !block.isFoliage(this, x, y, z)) {
+                return y + 1;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * No light is computed for the generated terrain: a block under the open sky
+     * is lit, anything below the surface is dark.
+     */
+    @Override
+    public int getFullBlockLightValue(int x, int y, int z) {
+        if (terrainGenerator == null) return super.getFullBlockLightValue(x, y, z);
+        return canBlockSeeTheSky(x, y, z) ? 15 : 0;
+    }
+
+    @Override
+    public int getBlockLightValue(int x, int y, int z) {
+        if (terrainGenerator == null) return super.getBlockLightValue(x, y, z);
+        return canBlockSeeTheSky(x, y, z) ? 15 : 0;
     }
 
     /**
@@ -424,7 +484,8 @@ public class ProfilerWorld extends World {
         if (terrainGenerator != null) {
             return getTerrainChunk(x >> 4, z >> 4).getHeightValue(x & 15, z & 15);
         }
-        return 64;
+        // As in a real chunk: the first block above the grass at Y 64
+        return 65;
     }
 
     @Override

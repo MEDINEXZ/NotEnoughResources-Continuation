@@ -15,6 +15,8 @@ import net.minecraft.block.Block;
 import net.minecraft.client.gui.inventory.GuiContainer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
+import net.minecraftforge.fluids.FluidContainerRegistry;
+import net.minecraftforge.fluids.FluidStack;
 import org.lwjgl.opengl.GL11;
 
 import java.awt.Point;
@@ -111,9 +113,21 @@ public class OreGenerationNEIHandler extends TemplateRecipeHandler {
         Block block = Block.getBlockFromItem(itemStack.getItem());
         int metadata = itemStack.getItemDamage();
 
+        // The item of a block without variants stands for the block in any state
+        // (a crop is generated at some growth stage, its item is always damage 0)
+        boolean anyState = !itemStack.getItem().getHasSubtypes();
+
+        // A filled bucket (or cell, can, ...) stands for the fluid it holds
+        FluidStack fluid = FluidContainerRegistry.getFluidForFilledItem(itemStack);
+        Block fluidBlock = fluid == null || fluid.getFluid() == null ? null : fluid.getFluid().getBlock();
+
         // One entry per dimension the block generates in
-        for (OreData oreData : OreRegistry.getOres(block, metadata)) {
-            if (oreData.hasGenerationData()) arecipes.add(new CachedOreGenerationRecipe(oreData));
+        for (OreData oreData : OreRegistry.getOres()) {
+            boolean sameBlock = oreData.getBlock() == block && (anyState || oreData.getMetadata() == metadata);
+            boolean sameFluid = fluidBlock != null && oreData.getBlock() == fluidBlock;
+            if ((sameBlock || sameFluid) && oreData.hasGenerationData()) {
+                arecipes.add(new CachedOreGenerationRecipe(oreData));
+            }
         }
     }
 
